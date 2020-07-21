@@ -1,5 +1,7 @@
 package def
 
+type KeyURL string
+
 type M3u8 struct {
 	Segment []*Segment
 }
@@ -18,6 +20,12 @@ type Key struct {
 }
 
 type Segment struct {
-	URI string
-	Key *Key
+	URI       string
+	DecodeKey string
+	Key       *Key
 }
+
+const (
+	EXTM3U    = "#EXTM3U"
+	EXT_X_KEY = "#EXT-X-KEY"
+)

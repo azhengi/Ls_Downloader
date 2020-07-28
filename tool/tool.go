@@ -1,24 +1,34 @@
 package tool
 
 import (
-	"encoding/hex"
+	"crypto/aes"
+	"crypto/cipher"
 	"fmt"
 	"godlvideo/def"
 	"io"
-	"io/ioutil"
 	"net/http"
+	"net/url"
+	"path"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 )
 
 var lineParameterPattern = regexp.MustCompile(`([a-zA-Z-]+)=("[^"]+"|[^",]+)`)
 
-func Get(u string) (io.ReadCloser, error) {
-	// http.Client http.Reqeust
+func Get(u string, params map[string]string) (io.ReadCloser, error) {
 	c := http.Client{Timeout: time.Second * time.Duration(60)}
-	resp, err := c.Get(u)
+	request, err := http.NewRequest(http.MethodGet, u, nil)
+	values := request.URL.Query()
+	for k, v := range params {
+		values.Add(k, v)
+	}
+	request.URL.RawQuery = values.Encode()
+
+	for k, v := range def.FakeHeader {
+		request.Header.Add(k, v)
+	}
+	resp, err := c.Do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -76,19 +86,15 @@ func Parser(lines []string) (*def.M3u8, error) {
 			seg = new(def.Segment)
 			seg.URI = line
 			seg.Key = key
-			m.Segment = append(m.Segment, seg)
+			m.Segments = append(m.Segments, seg)
 		default:
 		}
 	}
-
-	GetTsKeyText(m)
-
 	return m, nil
 }
 
 func parseLineParams(line string) map[string]string {
 	r := lineParameterPattern.FindAllStringSubmatch(line, -1)
-	// [[METHOD=AES-128. METHOD, AES-128], [URI=http://www.g.com, URI, http://www.g.com]]
 	params := make(map[string]string)
 	for _, cr := range r {
 		params[cr[1]] = strings.Trim(cr[2], "\"")
@@ -97,40 +103,38 @@ func parseLineParams(line string) map[string]string {
 	return params
 }
 
-func GetTsKeyText(m *def.M3u8) (*def.M3u8, error) {
-
-	limitChan := make(chan int, 200)
-
-	wg := &sync.WaitGroup{}
-	wg.Add(len(m.Segment))
-
-	for _, v := range m.Segment {
-		go func(seg *def.Segment) {
-			uri := seg.Key.URI
-			defer func() {
-				<-limitChan
-				wg.Done()
-			}()
-
-			body, err := Get(uri)
-			if err != nil {
-				fmt.Printf("Get %s key file err:%v\n", uri, err)
-				return
-			}
-			defer body.Close()
-
-			b, err := ioutil.ReadAll(body)
-			if err != nil {
-				fmt.Printf("Read %s body err:%v\n", uri, err)
-				return
-			}
-
-			actualText := hex.EncodeToString(b)
-			seg.DecodeKey = actualText
-		}(v)
-
-		limitChan <- 20
+func ResolveURL(u *url.URL, p string) string {
+	if strings.HasPrefix(p, "https://") || strings.HasPrefix(p, "http://") {
+		return p
 	}
+	var baseURL string
+	if strings.Index(p, "/") == 0 {
+		baseURL = u.Scheme + "://" + u.Host
+	} else {
+		tU := u.String()
+		baseURL = tU[0:strings.LastIndex(tU, "/")]
+	}
+	return baseURL + path.Join("/", p)
+}
 
-	return m, nil
+func Aes128Decrypt(crypted, key, iv []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	blockSize := block.BlockSize()
+	if len(iv) == 0 {
+		iv = key
+	}
+	blockMode := cipher.NewCBCDecrypter(block, key[:blockSize])
+	origData := make([]byte, len(crypted))
+	blockMode.CryptBlocks(origData, crypted)
+	origData = pkcs5UnPadding(origData)
+	return origData, nil
+}
+
+func pkcs5UnPadding(origData []byte) []byte {
+	length := len(origData)
+	unPadding := int(origData[length-1])
+	return origData[:(length - unPadding)]
 }

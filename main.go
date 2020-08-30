@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"sync"
 
-	"godlvideo/def"
-	"godlvideo/m3u8"
-	"godlvideo/tool"
+	"ls_Downloader/def"
+	"ls_Downloader/m3u8"
+	"ls_Downloader/tool"
 )
 
 var (

@@ -1,4 +1,4 @@
-module godlvideo
+module ls_Downloader
 
 go 1.13
 

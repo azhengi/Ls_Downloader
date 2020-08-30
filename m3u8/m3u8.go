@@ -3,10 +3,10 @@ package m3u8
 import (
 	"bufio"
 	"fmt"
-	"godlvideo/def"
-	"godlvideo/tool"
 	"io"
 	"io/ioutil"
+	"ls_Downloader/def"
+	"ls_Downloader/tool"
 	"strings"
 	"sync"
 )
